@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Samsun Avlak Haritası (Çevrimdışı GPS)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #121212;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #ffffff;
+        }
+        #map-viewport {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            touch-action: none;
+            cursor: grab;
+        }
+        #map-viewport:active {
+            cursor: grabbing;
+        }
+        #map-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+        #map-image {
+            display: block;
+            max-width: none;
+            pointer-events: none;
+        }
+        /* Kurulum Ekranı */
+        #setup-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(18, 18, 18, 0.96);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+        }
+        .setup-card {
+            background: #242424;
+            padding: 24px;
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.15);
+            max-width: 340px;
+            width: 100%;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        }
+        .setup-card h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #4da3ff;
+        }
+        .setup-card p {
+            font-size: 13px;
+            color: #ccc;
+            margin-bottom: 20px;
+            line-height: 1.45;
+        }
+        .file-btn {
+            background: #007bff;
+            color: white;
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            display: inline-block;
+            cursor: pointer;
+            width: 100%;
+            border: none;
+            font-size: 15px;
+            box-shadow: 0 4px 10px rgba(0,123,255,0.4);
+        }
+        .file-btn:active {
+            background: #0056b3;
+        }
+        #file-input {
+            display: none;
+        }
+        #loading-text {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #4da3ff;
+            display: none;
+        }
+        /* GPS Konum İşaretçisi */
+        #gps-marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            margin-left: -12px;
+            margin-top: -12px;
+            display: none;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .gps-dot {
+            width: 14px;
+            height: 14px;
+            background-color: #007bff;
+            border: 2.5px solid #ffffff;
+            border-radius: 50%;
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.7);
+        }
+        .gps-pulse {
+            width: 38px;
+            height: 38px;
+            background-color: rgba(0, 123, 255, 0.4);
+            border-radius: 50%;
+            position: absolute;
+            top: -7px;
+            left: -7px;
+            animation: pulse 2s infinite ease-out;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.4); opacity: 1; }
+            100% { transform: scale(1.6); opacity: 0; }
+        }
+        /* Üst Bilgi Paneli */
+        #status-bar {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(6px);
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 20;
+            font-size: 13px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .status-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .status-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #4da3ff;
+        }
+        #gps-coords {
+            font-family: monospace;
+            font-size: 12px;
+            color: #cccccc;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            background-color: #333;
+            color: #ffcc00;
+        }
+        .badge.active {
+            background-color: #198754;
+            color: #ffffff;
+        }
+        .badge.error {
+            background-color: #dc3545;
+            color: #ffffff;
+        }
+        /* Kontrol Butonları */
+        #controls {
+            position: fixed;
+            bottom: 24px;
+            right: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 20;
+        }
+        .ctrl-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(25, 25, 25, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            cursor: pointer;
+        }
+        .ctrl-btn:active {
+            background: #007bff;
+            transform: scale(0.95);
+        }
+        #btn-locate {
+            background: #007bff;
+            border-color: #4da3ff;
+        }
+        #btn-change-map {
+            font-size: 14px;
+        }
+        #toast {
+            position: fixed;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(220, 53, 69, 0.95);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            display: none;
+            z-index: 30;
+            white-space: nowrap;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="setup-screen">
+        <div class="setup-card">
+            <h2>Harita Yükleme</h2>
+            <p>Samsun avlak haritası görselini (.webp veya .jpg) seçin. Büyük boyutlu haritalar da desteklenir.</p>
+            <label class="file-btn">
+                Harita Görselini Seç
+                <input type="file" id="file-input" accept="image/*">
+            </label>
+            <div id="loading-text">Harita işleniyor, lütfen bekleyin...</div>
+        </div>
+    </div>
+
+    <div id="status-bar">
+        <div class="status-info">
+            <span class="status-title">Samsun Avlak Haritası</span>
+            <span id="gps-coords">Uydu bekleniyor...</span>
+        </div>
+        <span id="gps-badge" class="badge">GPS Aranıyor</span>
+    </div>
+
+    <div id="map-viewport">
+        <div id="map-canvas">
+            <img id="map-image" alt="Samsun Avlak Haritası">
+            <div id="gps-marker">
+                <div class="gps-pulse"></div>
+                <div class="gps-dot"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="controls">
+        <button class="ctrl-btn" id="btn-locate" title="Konumuma Git">◎</button>
+        <button class="ctrl-btn" id="btn-zoom-in" title="Yakınlaştır">+</button>
+        <button class="ctrl-btn" id="btn-zoom-out" title="Uzaklaştır">−</button>
+        <button class="ctrl-btn" id="btn-reset" title="Haritayı Sığdır">⛶</button>
+        <button class="ctrl-btn" id="btn-change-map" title="Haritayı Değiştir">🖼️</button>
+    </div>
+
+    <script>
+        const MAP_BOUNDS = {
+            north: 41.7350, 
+            south: 40.8250, 
+            west:  35.3300, 
+            east:  37.1400  
+        };
+
+        const viewport = document.getElementById('map-viewport');
+        const canvas = document.getElementById('map-canvas');
+        const mapImg = document.getElementById('map-image');
+        const gpsMarker = document.getElementById('gps-marker');
+        const gpsCoordsText = document.getElementById('gps-coords');
+        const gpsBadge = document.getElementById('gps-badge');
+        const toast = document.getElementById('toast');
+        const setupScreen = document.getElementById('setup-screen');
+        const fileInput = document.getElementById('file-input');
+        const loadingText = document.getElementById('loading-text');
+
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let initialPinchDist = null;
+        let initialScale = 1;
+
+        let currentLat = null;
+        let currentLng = null;
+        let firstFix = true;
+        let currentObjectUrl = null;
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 3500);
+        }
+
+        function updateTransform() {
+            canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            gpsMarker.style.transform = `scale(${1 / scale})`;
+        }
+
+        function fitMapToScreen() {
+            if (!mapImg.naturalWidth) return;
+            const vw = viewport.clientWidth;
+            const vh = viewport.clientHeight;
+            const iw = mapImg.naturalWidth;
+            const ih = mapImg.naturalHeight;
+
+            scale = Math.min(vw / iw, vh / ih);
+            panX = (vw - iw * scale) / 2;
+            panY = (vh - ih * scale) / 2;
+            updateTransform();
+        }
+
+        function displayBlob(blob) {
+            if (currentObjectUrl) {
+                URL.revokeObjectURL(currentObjectUrl);
+            }
+            currentObjectUrl = URL.createObjectURL(blob);
+            mapImg.src = currentObjectUrl;
+        }
+
+        mapImg.onload = () => {
+            loadingText.style.display = 'none';
+            setupScreen.style.display = 'none';
+            fitMapToScreen();
+            if (currentLat !== null && currentLng !== null) {
+                updateMarkerPosition(currentLat, currentLng);
+            }
+        };
+
+        mapImg.onerror = () => {
+            loadingText.style.display = 'none';
+            showToast("Görsel açılamadı. Lütfen geçerli bir resim seçin.");
+        };
+
+        // Büyük Dosyalar İçin IndexedDB Veritabanı Yönetimi
+        const DB_NAME = "AvlakHaritaDB";
+        const STORE_NAME = "haritalar";
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                if (!window.indexedDB) {
+                    reject("IndexedDB desteklenmiyor");
+                    return;
+                }
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                req.onsuccess = (e) => resolve(e.target.result);
+                req.onerror = (e) => reject(e.target.error);
+            });
+        }
+
+        async function saveMapToDB(fileBlob) {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, "readwrite");
+                tx.objectStore(STORE_NAME).put(fileBlob, "samsun_harita");
+            } catch (err) {
+                console.warn("Kalıcı hafızaya yazılamadı, ancak oturum boyunca çalışacak:", err);
+            }
+        }
+
+        async function loadMapFromDB() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const req = tx.objectStore(STORE_NAME).get("samsun_harita");
+                req.onsuccess = () => {
+                    if (req.result) {
+                        displayBlob(req.result);
+                    }
+                };
+            } catch (err) {
+                console.warn("Kayıtlı harita okunamadı:", err);
+            }
+        }
+
+        // Dosya seçildiğinde anında ekrana bas ve veritabanına kaydet
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            loadingText.style.display = 'block';
+            
+            // Önce anında ekranda göster (boyut sınırı olmadan çalışır)
+            displayBlob(file);
+            
+            // Sonra arka planda kalıcı olarak kaydet
+            saveMapToDB(file);
+        });
+
+        document.getElementById('btn-change-map').onclick = () => {
+            setupScreen.style.display = 'flex';
+        };
+
+        function updateMarkerPosition(lat, lng) {
+            if (!mapImg.naturalWidth) return;
+
+            const iw = mapImg.naturalWidth;
+            const ih = mapImg.naturalHeight;
+
+            const xRatio = (lng - MAP_BOUNDS.west) / (MAP_BOUNDS.east - MAP_BOUNDS.west);
+            const yRatio = (MAP_BOUNDS.north - lat) / (MAP_BOUNDS.north - MAP_BOUNDS.south);
+
+            const pixelX = xRatio * iw;
+            const pixelY = yRatio * ih;
+
+            gpsMarker.style.left = `${pixelX}px`;
+            gpsMarker.style.top = `${pixelY}px`;
+            gpsMarker.style.display = 'block';
+
+            if (xRatio < 0 || xRatio > 1 || yRatio < 0 || yRatio > 1) {
+                gpsBadge.textContent = "Harita Dışı";
+                gpsBadge.className = "badge";
+            } else {
+                gpsBadge.textContent = "GPS Aktif";
+                gpsBadge.className = "badge active";
+            }
+
+            if (firstFix && xRatio >= 0 && xRatio <= 1 && yRatio >= 0 && yRatio <= 1) {
+                centerOnGPS();
+                firstFix = false;
+            }
+        }
+
+        function centerOnGPS() {
+            if (currentLat === null || currentLng === null) {
+                showToast("Henüz GPS uydusundan konum alınamadı.");
+                return;
+            }
+            const iw = mapImg.naturalWidth;
+            const ih = mapImg.naturalHeight;
+            const xRatio = (currentLng - MAP_BOUNDS.west) / (MAP_BOUNDS.east - MAP_BOUNDS.west);
+            const yRatio = (MAP_BOUNDS.north - currentLat) / (MAP_BOUNDS.north - MAP_BOUNDS.south);
+
+            const pixelX = xRatio * iw;
+            const pixelY = yRatio * ih;
+
+            if (scale < 0.8) scale = 1.0;
+
+            panX = (viewport.clientWidth / 2) - (pixelX * scale);
+            panY = (viewport.clientHeight / 2) - (pixelY * scale);
+            updateTransform();
+        }
+
+        function initGPS() {
+            if (!("geolocation" in navigator)) {
+                gpsBadge.textContent = "Desteklenmiyor";
+                gpsBadge.className = "badge error";
+                gpsCoordsText.textContent = "Cihaz GPS desteklemiyor";
+                return;
+            }
+
+            navigator.geolocation.watchPosition(
+                (pos) => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    const acc = Math.round(pos.coords.accuracy);
+
+                    gpsCoordsText.textContent = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)} (±${acc}m)`;
+                    updateMarkerPosition(currentLat, currentLng);
+                },
+                (err) => {
+                    gpsBadge.textContent = "GPS Hatası";
+                    gpsBadge.className = "badge error";
+                    if (err.code === 1) {
+                        gpsCoordsText.textContent = "Konum izni reddedildi";
+                    } else if (err.code === 2) {
+                        gpsCoordsText.textContent = "Uydu sinyali alınamıyor";
+                    } else {
+                        gpsCoordsText.textContent = "Zaman aşımı";
+                    }
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 2000,
+                    timeout: 15000
+                }
+            );
+        }
+
+        viewport.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.clientX - panX;
+            startY = e.clientY - panY;
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            panX = e.clientX - startX;
+            panY = e.clientY - startY;
+            updateTransform();
+        });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+            zoomAt(e.clientX, e.clientY, zoomFactor);
+        }, { passive: false });
+
+        viewport.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                startX = e.touches[0].clientX - panX;
+                startY = e.touches[0].clientY - panY;
+            } else if (e.touches.length === 2) {
+                isDragging = false;
+                initialPinchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                initialScale = scale;
+            }
+        }, { passive: false });
+
+        viewport.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1 && isDragging) {
+                panX = e.touches[0].clientX - startX;
+                panY = e.touches[0].clientY - startY;
+                updateTransform();
+            } else if (e.touches.length === 2 && initialPinchDist) {
+                const dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                const newScale = Math.min(Math.max(initialScale * (dist / initialPinchDist), 0.1), 10);
+                const factor = newScale / scale;
+                zoomAt(centerX, centerY, factor);
+            }
+        }, { passive: false });
+
+        viewport.addEventListener('touchend', () => {
+            isDragging = false;
+            initialPinchDist = null;
+        });
+
+        function zoomAt(cx, cy, factor) {
+            const newScale = Math.min(Math.max(scale * factor, 0.1), 10);
+            const realFactor = newScale / scale;
+            panX = cx - (cx - panX) * realFactor;
+            panY = cy - (cy - panY) * realFactor;
+            scale = newScale;
+            updateTransform();
+        }
+
+        document.getElementById('btn-zoom-in').onclick = () => zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.3);
+        document.getElementById('btn-zoom-out').onclick = () => zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.75);
+        document.getElementById('btn-reset').onclick = fitMapToScreen;
+        document.getElementById('btn-locate').onclick = centerOnGPS;
+
+        window.addEventListener('resize', fitMapToScreen);
+        
+        // Başlangıçta kayıtlı haritayı yüklemeyi dene ve GPS'i başlat
+        loadMapFromDB();
+        initGPS();
+    </script>
+</body>
+</html>
